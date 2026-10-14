@@ -2,16 +2,24 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import WordPopup from '../../components/WordPopup';
+import { useLessonCache } from '../../context/LessonCacheContext';
 
 export default function LessonViewer() {
   const { lessonId } = useParams();
-  const [lesson, setLesson] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cache = useLessonCache();
+
+  // Instant cached lesson data & status
+  const cachedLesson = cache.lessonDetails.get(String(lessonId));
+  const cachedSectionProg = cache.sectionProgressMap.get(String(lessonId)) || {};
+  const isCachedDone = cache.progressMap.has(String(lessonId));
+
+  const [lesson, setLesson] = useState(cachedLesson || null);
+  const [loading, setLoading] = useState(!cachedLesson);
   const [showTranslation, setShowTranslation] = useState(true);
-  const [progressMap, setProgressMap] = useState({});
+  const [progressMap, setProgressMap] = useState(cachedSectionProg);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'unread' | 'learning' | 'known'
   const [userId, setUserId] = useState(null);
-  const [isLessonCompleted, setIsLessonCompleted] = useState(false);
+  const [isLessonCompleted, setIsLessonCompleted] = useState(isCachedDone);
   const [updatingLessonProgress, setUpdatingLessonProgress] = useState(false);
 
   useEffect(() => {
@@ -19,12 +27,18 @@ export default function LessonViewer() {
   }, [lessonId]);
 
   const fetchLessonAndProgress = async () => {
-    setLoading(true);
+    if (!cachedLesson) {
+      setLoading(true);
+    }
     const { data: { session } } = await supabase.auth.getSession();
     if (session) setUserId(session.user.id);
 
+    // If not cached or background re-validation
     const { data: lessonData } = await supabase.from('lessons').select('*').eq('id', lessonId).single();
-    if (lessonData) setLesson(lessonData);
+    if (lessonData) {
+      setLesson(lessonData);
+      cache.lessonDetails.set(String(lessonId), lessonData);
+    }
 
     if (session) {
       // 1. Fetch section progress
@@ -38,6 +52,7 @@ export default function LessonViewer() {
         const pMap = {};
         progressData.forEach(p => { pMap[p.section_id] = p.status; });
         setProgressMap(pMap);
+        cache.sectionProgressMap.set(String(lessonId), pMap);
       }
 
       // 2. Fetch lesson completion status
@@ -49,7 +64,13 @@ export default function LessonViewer() {
         .maybeSingle();
 
       if (lessonProgData) {
-        setIsLessonCompleted(Boolean(lessonProgData.is_completed));
+        const completed = Boolean(lessonProgData.is_completed);
+        setIsLessonCompleted(completed);
+        if (completed) {
+          cache.progressMap.set(String(lessonId), true);
+        } else {
+          cache.progressMap.delete(String(lessonId));
+        }
       }
     }
     setLoading(false);
@@ -63,6 +84,11 @@ export default function LessonViewer() {
 
     const nextStatus = !isLessonCompleted;
     setIsLessonCompleted(nextStatus); // Optimistic UI
+    if (nextStatus) {
+      cache.progressMap.set(String(lessonId), true);
+    } else {
+      cache.progressMap.delete(String(lessonId));
+    }
     setUpdatingLessonProgress(true);
 
     const { error } = await supabase
@@ -81,6 +107,11 @@ export default function LessonViewer() {
     if (error) {
       console.error('Error toggling lesson completion:', error);
       setIsLessonCompleted(!nextStatus); // Rollback
+      if (!nextStatus) {
+        cache.progressMap.set(String(lessonId), true);
+      } else {
+        cache.progressMap.delete(String(lessonId));
+      }
     }
     setUpdatingLessonProgress(false);
   };
@@ -88,7 +119,11 @@ export default function LessonViewer() {
   const updateSectionStatus = async (sectionId, newStatus) => {
     if (!userId) return;
 
-    setProgressMap(prev => ({ ...prev, [sectionId]: newStatus }));
+    setProgressMap(prev => {
+      const updated = { ...prev, [sectionId]: newStatus };
+      cache.sectionProgressMap.set(String(lessonId), updated);
+      return updated;
+    });
 
     await supabase.from('user_section_progress').upsert({
       user_id: userId,
@@ -99,7 +134,7 @@ export default function LessonViewer() {
     }, { onConflict: 'user_id,lesson_id,section_id' });
   };
 
-  if (loading) return <div className="p-8 text-center text-gray-600">লেসন লোড হচ্ছে...</div>;
+  if (loading && !lesson) return <div className="p-8 text-center text-gray-600">লেসন লোড হচ্ছে...</div>;
   if (!lesson) return <div className="p-8 text-center text-red-500">লেসন পাওয়া যায়নি!</div>;
 
   const content = lesson.content;

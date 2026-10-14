@@ -1,25 +1,55 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { useLessonCache } from '../../context/LessonCacheContext';
 
 export default function CourseOverview() {
   const { courseId } = useParams();
-  const [course, setCourse] = useState(null);
-  const [lessons, setLessons] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cache = useLessonCache();
+
+  // Retrieve cached data if present for 0ms load
+  const cachedCourseData = cache.courseMap.get(courseId);
+
+  const [course, setCourse] = useState(cachedCourseData?.course || null);
+  const [lessons, setLessons] = useState(cachedCourseData?.lessons || []);
+  const [loading, setLoading] = useState(!cachedCourseData);
   const [activeGlobalFilter, setActiveGlobalFilter] = useState('all'); // 'all' | 'unread' | 'learning' | 'known'
-  const [progressSummary, setProgressSummary] = useState({});
-  const [globalCounts, setGlobalCounts] = useState({ total: 0, unread: 0, learning: 0, known: 0 });
-  const [allSectionsList, setAllSectionsList] = useState([]);
+  const [progressSummary, setProgressSummary] = useState(cachedCourseData?.progressSummary || {});
+  const [globalCounts, setGlobalCounts] = useState(
+    cachedCourseData?.globalCounts || { total: 0, unread: 0, learning: 0, known: 0 }
+  );
+  const [allSectionsList, setAllSectionsList] = useState(cachedCourseData?.allSectionsList || []);
   const [userId, setUserId] = useState(null);
-  const [completedLessonIds, setCompletedLessonIds] = useState(new Set());
+  const [completedLessonIds, setCompletedLessonIds] = useState(new Set(cache.progressMap.keys()));
 
   useEffect(() => {
     fetchCourseAndProgress();
   }, [courseId]);
 
+  // Hover prefetch for lesson details
+  const prefetchLesson = async (lessonId) => {
+    const strId = String(lessonId);
+    if (cache.lessonDetails.has(strId)) return;
+
+    try {
+      const { data } = await supabase
+        .from('lessons')
+        .select('*')
+        .eq('id', strId)
+        .single();
+
+      if (data) {
+        cache.lessonDetails.set(strId, data);
+      }
+    } catch (e) {
+      console.error('Prefetch error:', e);
+    }
+  };
+
   const fetchCourseAndProgress = async () => {
-    setLoading(true);
+    if (!cachedCourseData) {
+      setLoading(true);
+    }
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
       setUserId(session.user.id);
@@ -32,7 +62,11 @@ export default function CourseOverview() {
         .eq('is_completed', true);
 
       if (!lErr && lessonProgData) {
-        setCompletedLessonIds(new Set(lessonProgData.map(item => String(item.lesson_id))));
+        const cSet = new Set(lessonProgData.map(item => String(item.lesson_id)));
+        setCompletedLessonIds(cSet);
+        lessonProgData.forEach(item => {
+          cache.progressMap.set(String(item.lesson_id), true);
+        });
       }
     }
 
@@ -106,9 +140,32 @@ export default function CourseOverview() {
         known: gKnown
       });
 
+      const fullGlobalCounts = {
+        total: gTotal,
+        unread: gTotal - (gKnown + gLearning),
+        learning: gLearning,
+        known: gKnown
+      };
+
       setAllSectionsList(flatSections);
       setProgressSummary(summary);
       setLessons(lessonsData);
+
+      // Save to cache for 0ms navigation on back/re-visit
+      cache.courseMap.set(courseId, {
+        course: courseData,
+        lessons: lessonsData,
+        progressSummary: summary,
+        globalCounts: fullGlobalCounts,
+        allSectionsList: flatSections,
+      });
+
+      // Preload lessonDetails cache from already fetched lessons content
+      lessonsData.forEach(l => {
+        if (!cache.lessonDetails.has(String(l.id))) {
+          cache.lessonDetails.set(String(l.id), l);
+        }
+      });
     }
     setLoading(false);
   };
@@ -145,13 +202,15 @@ export default function CourseOverview() {
     const isCurrentlyDone = completedLessonIds.has(strLessonId);
     const nextStatus = !isCurrentlyDone;
 
-    // Optimistic UI update
+    // Optimistic UI update & cache sync
     setCompletedLessonIds((prev) => {
       const updated = new Set(prev);
       if (nextStatus) {
         updated.add(strLessonId);
+        cache.progressMap.set(strLessonId, true);
       } else {
         updated.delete(strLessonId);
+        cache.progressMap.delete(strLessonId);
       }
       return updated;
     });
@@ -176,8 +235,10 @@ export default function CourseOverview() {
         const rollback = new Set(prev);
         if (isCurrentlyDone) {
           rollback.add(strLessonId);
+          cache.progressMap.set(strLessonId, true);
         } else {
           rollback.delete(strLessonId);
+          cache.progressMap.delete(strLessonId);
         }
         return rollback;
       });
@@ -273,6 +334,7 @@ export default function CourseOverview() {
                   <Link
                     key={lesson.id}
                     to={`/lesson/${lesson.id}`}
+                    onMouseEnter={() => prefetchLesson(lesson.id)}
                     className={`flex flex-col sm:flex-row sm:items-center justify-between p-5 bg-white border rounded-2xl shadow-sm hover:shadow-md transition-all gap-4 group ${
                       isDone ? 'border-emerald-300 bg-emerald-50/20' : 'border-gray-200 hover:border-blue-200'
                     }`}

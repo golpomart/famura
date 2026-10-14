@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
+import { LessonCacheProvider } from './context/LessonCacheContext';
 import Login from './pages/Auth/Login';
 import AdminDashboard from './pages/Admin/AdminDashboard';
 import AdminCurriculum from './pages/Admin/AdminCurriculum';
@@ -29,22 +30,24 @@ function App() {
   if (loading) return <div className="flex items-center justify-center min-h-screen text-xl bg-gray-50">লোড হচ্ছে...</div>;
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
-        
-        {/* Admin Routes */}
-        <Route path="/admin" element={session ? <AdminDashboard /> : <Navigate to="/login" />} />
-        <Route path="/admin/course/:courseId" element={session ? <AdminCurriculum /> : <Navigate to="/login" />} />
-        
-        {/* Student Routes */}
-        <Route path="/" element={session ? <UserDashboard /> : <Navigate to="/login" />} />
-        <Route path="/course/:courseId" element={session ? <CourseOverview /> : <Navigate to="/login" />} />
-        <Route path="/lesson/:lessonId" element={session ? <LessonViewer /> : <Navigate to="/login" />} />
-        <Route path="/flashcards" element={session ? <Flashcards /> : <Navigate to="/login" />} />
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </Router>
+    <LessonCacheProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
+          
+          {/* Admin Routes */}
+          <Route path="/admin" element={session ? <AdminDashboard /> : <Navigate to="/login" />} />
+          <Route path="/admin/course/:courseId" element={session ? <AdminCurriculum /> : <Navigate to="/login" />} />
+          
+          {/* Student Routes */}
+          <Route path="/" element={session ? <UserDashboard /> : <Navigate to="/login" />} />
+          <Route path="/course/:courseId" element={session ? <CourseOverview /> : <Navigate to="/login" />} />
+          <Route path="/lesson/:lessonId" element={session ? <LessonViewer /> : <Navigate to="/login" />} />
+          <Route path="/flashcards" element={session ? <Flashcards /> : <Navigate to="/login" />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </Router>
+    </LessonCacheProvider>
   );
 }
 
