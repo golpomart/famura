@@ -11,6 +11,8 @@ export default function LessonViewer() {
   const [progressMap, setProgressMap] = useState({});
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'unread' | 'learning' | 'known'
   const [userId, setUserId] = useState(null);
+  const [isLessonCompleted, setIsLessonCompleted] = useState(false);
+  const [updatingLessonProgress, setUpdatingLessonProgress] = useState(false);
 
   useEffect(() => {
     fetchLessonAndProgress();
@@ -25,6 +27,7 @@ export default function LessonViewer() {
     if (lessonData) setLesson(lessonData);
 
     if (session) {
+      // 1. Fetch section progress
       const { data: progressData } = await supabase
         .from('user_section_progress')
         .select('section_id, status')
@@ -36,8 +39,50 @@ export default function LessonViewer() {
         progressData.forEach(p => { pMap[p.section_id] = p.status; });
         setProgressMap(pMap);
       }
+
+      // 2. Fetch lesson completion status
+      const { data: lessonProgData } = await supabase
+        .from('user_lesson_progress')
+        .select('is_completed')
+        .eq('user_id', session.user.id)
+        .eq('lesson_id', String(lessonId))
+        .maybeSingle();
+
+      if (lessonProgData) {
+        setIsLessonCompleted(Boolean(lessonProgData.is_completed));
+      }
     }
     setLoading(false);
+  };
+
+  const toggleLessonCompletion = async () => {
+    if (!userId) {
+      alert('অনুগ্রহ করে আগে লগইন করুন।');
+      return;
+    }
+
+    const nextStatus = !isLessonCompleted;
+    setIsLessonCompleted(nextStatus); // Optimistic UI
+    setUpdatingLessonProgress(true);
+
+    const { error } = await supabase
+      .from('user_lesson_progress')
+      .upsert(
+        {
+          user_id: userId,
+          lesson_id: String(lessonId),
+          is_completed: nextStatus,
+          completed_at: nextStatus ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,lesson_id' }
+      );
+
+    if (error) {
+      console.error('Error toggling lesson completion:', error);
+      setIsLessonCompleted(!nextStatus); // Rollback
+    }
+    setUpdatingLessonProgress(false);
   };
 
   const updateSectionStatus = async (sectionId, newStatus) => {
@@ -141,15 +186,36 @@ export default function LessonViewer() {
         {/* 1. TRANSLATION LESSON */}
         {lesson.lesson_type === 'translation' && content?.s ? (
           content.s.map((sentence) => (
-            <div key={sentence.id} className="p-8 text-right bg-white border border-gray-100 rounded-2xl shadow-sm transition-shadow hover:shadow-md" dir="rtl">
-              <div className="mb-2 text-4xl leading-loose text-gray-900 font-bold flex flex-wrap justify-start gap-x-1.5 gap-y-4" dir="rtl" style={{ fontFamily: 'Amiri, serif' }}>
-                {sentence.w?.map((word) => (
-                  <WordPopup key={word.i} word={word}/>
-                ))}
+            <div 
+              key={sentence.id} 
+              className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-100 flex flex-col justify-center items-center text-center space-y-4 hover:shadow-md transition-shadow"
+            >
+              {/* আরবি টেক্সট */}
+              <div className="w-full py-2" dir="rtl">
+                {sentence.w && sentence.w.length > 0 ? (
+                  <div className="text-xl sm:text-2xl font-semibold text-gray-900 leading-loose flex flex-wrap justify-center gap-x-1.5 gap-y-2" dir="rtl" style={{ fontFamily: 'Amiri, serif' }}>
+                    {sentence.w.map((word) => (
+                      <WordPopup key={word.i} word={word}/>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xl sm:text-2xl font-arabic text-gray-900 text-center leading-loose tracking-wide py-2" dir="rtl" style={{ fontFamily: 'Amiri, serif' }}>
+                    {sentence.ar}
+                  </p>
+                )}
               </div>
+
+              {/* ডিভাইডার লাইন (যদি অনুবাদ দেখানো থাকে) */}
               {showTranslation && (
-                <div className="pt-6 mt-6 text-2xl font-medium text-left text-gray-700 border-t border-gray-100" dir="ltr">
-                  {sentence.bn}
+                <div className="w-full border-t border-gray-100" />
+              )}
+
+              {/* বাংলা অনুবাদ */}
+              {showTranslation && (
+                <div className="w-full">
+                  <p className="text-base text-gray-700 text-center leading-relaxed font-normal pt-2">
+                    {sentence.bn || sentence.translation || sentence.bangla}
+                  </p>
                 </div>
               )}
             </div>
@@ -180,16 +246,23 @@ export default function LessonViewer() {
                     </span>
                   </div>
 
-                  <div className="p-6 md:p-8 bg-gradient-to-br from-indigo-50/40 to-blue-50/20 border-b border-gray-100">
+                  <div className="p-5 sm:p-6 bg-gradient-to-br from-indigo-50/40 to-blue-50/20 border-b border-gray-100 flex flex-col justify-center items-center text-center space-y-3">
                     {sec.ar_question && (
-                      <div className="text-2xl md:text-3xl font-bold text-gray-900 mb-4 text-right leading-relaxed" dir="rtl" style={{ fontFamily: 'Amiri, serif' }}>
-                        {sec.ar_question}
+                      <div className="w-full py-1" dir="rtl">
+                        <p className="text-xl sm:text-2xl font-semibold text-gray-900 text-center leading-loose tracking-wide" dir="rtl" style={{ fontFamily: 'Amiri, serif' }}>
+                          {sec.ar_question}
+                        </p>
                       </div>
                     )}
+                    {sec.ar_question && sec.bn_question && (
+                      <div className="w-full border-t border-indigo-100/60" />
+                    )}
                     {sec.bn_question && (
-                      <div className="text-lg md:text-xl font-bold text-indigo-950 flex items-start gap-3">
-                        <span className="bg-indigo-600 text-white text-xs px-2.5 py-1 rounded-md uppercase tracking-wider shrink-0 mt-0.5">প্রশ্ন</span>
-                        <span>{sec.bn_question}</span>
+                      <div className="w-full">
+                        <p className="text-base text-gray-700 text-center leading-relaxed font-normal pt-1">
+                          <span className="bg-indigo-600 text-white text-xs px-2 py-0.5 rounded-md uppercase tracking-wider font-semibold mr-2 inline-block">প্রশ্ন</span>
+                          {sec.bn_question}
+                        </p>
                       </div>
                     )}
                   </div>
@@ -233,6 +306,40 @@ export default function LessonViewer() {
             এই লেসন টাইপটির ডিজাইন এখনো তৈরি করা হয়নি।
           </div>
         )}
+
+        {/* Bottom Lesson Completion Action Button */}
+        <div className="pt-6 pb-8 flex flex-col items-center">
+          <button
+            type="button"
+            disabled={updatingLessonProgress}
+            onClick={toggleLessonCompletion}
+            className={`w-full max-w-md py-4 px-6 rounded-2xl font-bold text-base sm:text-lg flex items-center justify-center gap-3 transition-all shadow-md active:scale-[0.99] ${
+              isLessonCompleted
+                ? 'bg-emerald-50 text-emerald-800 border-2 border-emerald-500 hover:bg-emerald-100/80 shadow-emerald-100'
+                : 'bg-emerald-600 text-white hover:bg-emerald-700 border-2 border-emerald-600 shadow-emerald-200'
+            }`}
+          >
+            {isLessonCompleted ? (
+              <>
+                <svg className="w-6 h-6 text-emerald-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span>✓ লেসনটি সম্পন্ন হয়েছে (ক্লিক করে আনমার্ক করুন)</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-6 h-6 text-white shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>লেসন সম্পন্ন হিসেবে চিহ্নিত করুন</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

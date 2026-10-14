@@ -12,6 +12,7 @@ export default function CourseOverview() {
   const [globalCounts, setGlobalCounts] = useState({ total: 0, unread: 0, learning: 0, known: 0 });
   const [allSectionsList, setAllSectionsList] = useState([]);
   const [userId, setUserId] = useState(null);
+  const [completedLessonIds, setCompletedLessonIds] = useState(new Set());
 
   useEffect(() => {
     fetchCourseAndProgress();
@@ -20,7 +21,20 @@ export default function CourseOverview() {
   const fetchCourseAndProgress = async () => {
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
-    if (session) setUserId(session.user.id);
+    if (session) {
+      setUserId(session.user.id);
+
+      // Fetch completed lessons
+      const { data: lessonProgData, error: lErr } = await supabase
+        .from('user_lesson_progress')
+        .select('lesson_id')
+        .eq('user_id', session.user.id)
+        .eq('is_completed', true);
+
+      if (!lErr && lessonProgData) {
+        setCompletedLessonIds(new Set(lessonProgData.map(item => String(item.lesson_id))));
+      }
+    }
 
     const { data: courseData } = await supabase.from('courses').select('*').eq('id', courseId).single();
     if (courseData) setCourse(courseData);
@@ -117,6 +131,59 @@ export default function CourseOverview() {
     fetchCourseAndProgress();
   };
 
+  const toggleLessonComplete = async (lessonId, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      alert('অনুগ্রহ করে আগে লগইন করুন।');
+      return;
+    }
+
+    const strLessonId = String(lessonId);
+    const isCurrentlyDone = completedLessonIds.has(strLessonId);
+    const nextStatus = !isCurrentlyDone;
+
+    // Optimistic UI update
+    setCompletedLessonIds((prev) => {
+      const updated = new Set(prev);
+      if (nextStatus) {
+        updated.add(strLessonId);
+      } else {
+        updated.delete(strLessonId);
+      }
+      return updated;
+    });
+
+    const { error } = await supabase
+      .from('user_lesson_progress')
+      .upsert(
+        {
+          user_id: session.user.id,
+          lesson_id: strLessonId,
+          is_completed: nextStatus,
+          completed_at: nextStatus ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,lesson_id' }
+      );
+
+    if (error) {
+      console.error('Error updating progress:', error);
+      // Rollback on error
+      setCompletedLessonIds((prev) => {
+        const rollback = new Set(prev);
+        if (isCurrentlyDone) {
+          rollback.add(strLessonId);
+        } else {
+          rollback.delete(strLessonId);
+        }
+        return rollback;
+      });
+    }
+  };
+
   if (loading) return <div className="p-8 text-center text-gray-600 font-medium">লোড হচ্ছে...</div>;
   if (!course) return <div className="p-8 text-center text-red-500 font-bold">কোর্স পাওয়া যায়নি!</div>;
 
@@ -200,24 +267,34 @@ export default function CourseOverview() {
             <div className="flex flex-col gap-3">
               {lessons.map((lesson, index) => {
                 const info = progressSummary[lesson.id] || { total: 0, unread: 0, learning: 0, known: 0 };
+                const isDone = completedLessonIds.has(String(lesson.id));
+
                 return (
                   <Link
                     key={lesson.id}
                     to={`/lesson/${lesson.id}`}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-5 bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md hover:border-blue-200 transition-all gap-4 group"
+                    className={`flex flex-col sm:flex-row sm:items-center justify-between p-5 bg-white border rounded-2xl shadow-sm hover:shadow-md transition-all gap-4 group ${
+                      isDone ? 'border-emerald-300 bg-emerald-50/20' : 'border-gray-200 hover:border-blue-200'
+                    }`}
                   >
                     <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-10 h-10 font-bold text-blue-700 bg-blue-50 rounded-full shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <div
+                        className={`flex items-center justify-center w-10 h-10 font-bold rounded-full shrink-0 transition-colors ${
+                          isDone
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-blue-50 text-blue-700 group-hover:bg-blue-600 group-hover:text-white'
+                        }`}
+                      >
                         {index + 1}
                       </div>
                       <div>
-                        <h3 className="text-lg font-bold text-gray-800 group-hover:text-blue-600 transition-colors">
+                        <h3 className={`text-lg font-bold transition-colors ${isDone ? 'text-emerald-950' : 'text-gray-800 group-hover:text-blue-600'}`}>
                           {lesson.title}
                         </h3>
                       </div>
                     </div>
 
-                    {/* 4 Mini Progress Indicators Inside Lesson Item */}
+                    {/* 4 Mini Progress Indicators Inside Lesson Item & Toggle Complete Button */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="px-3 py-1 text-xs font-bold rounded-xl bg-gray-100 text-gray-700 border border-gray-200" title="মোট সেকশন">
                         মোট: {info.total}
@@ -231,6 +308,31 @@ export default function CourseOverview() {
                       <span className="px-3 py-1 text-xs font-bold rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200" title="জানি">
                         জানি: {info.known}
                       </span>
+
+                      {/* সম্পন্ন করুন / সম্পন্ন বাটন */}
+                      <button
+                        type="button"
+                        onClick={(e) => toggleLessonComplete(lesson.id, e)}
+                        className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all shadow-sm ${
+                          isDone
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-600'
+                            : 'bg-white text-gray-600 border border-gray-300 hover:border-emerald-500 hover:text-emerald-600'
+                        }`}
+                        title={isDone ? 'ক্লিক করে অসম্পন্ন করুন' : 'সম্পন্ন হিসেবে চিহ্নিত করুন'}
+                      >
+                        <svg
+                          className={`w-4 h-4 ${isDone ? 'text-white' : 'text-gray-400'}`}
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <span>{isDone ? 'সম্পন্ন' : 'সম্পন্ন করুন'}</span>
+                      </button>
                     </div>
                   </Link>
                 );
