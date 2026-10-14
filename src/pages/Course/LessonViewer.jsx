@@ -1,0 +1,239 @@
+import React, { useEffect, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
+import WordPopup from '../../components/WordPopup';
+
+export default function LessonViewer() {
+  const { lessonId } = useParams();
+  const [lesson, setLesson] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showTranslation, setShowTranslation] = useState(true);
+  const [progressMap, setProgressMap] = useState({});
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'unread' | 'learning' | 'known'
+  const [userId, setUserId] = useState(null);
+
+  useEffect(() => {
+    fetchLessonAndProgress();
+  }, [lessonId]);
+
+  const fetchLessonAndProgress = async () => {
+    setLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) setUserId(session.user.id);
+
+    const { data: lessonData } = await supabase.from('lessons').select('*').eq('id', lessonId).single();
+    if (lessonData) setLesson(lessonData);
+
+    if (session) {
+      const { data: progressData } = await supabase
+        .from('user_section_progress')
+        .select('section_id, status')
+        .eq('user_id', session.user.id)
+        .eq('lesson_id', lessonId);
+
+      if (progressData) {
+        const pMap = {};
+        progressData.forEach(p => { pMap[p.section_id] = p.status; });
+        setProgressMap(pMap);
+      }
+    }
+    setLoading(false);
+  };
+
+  const updateSectionStatus = async (sectionId, newStatus) => {
+    if (!userId) return;
+
+    setProgressMap(prev => ({ ...prev, [sectionId]: newStatus }));
+
+    await supabase.from('user_section_progress').upsert({
+      user_id: userId,
+      lesson_id: lessonId,
+      section_id: sectionId,
+      status: newStatus,
+      updated_at: new Date()
+    }, { onConflict: 'user_id,lesson_id,section_id' });
+  };
+
+  if (loading) return <div className="p-8 text-center text-gray-600">লেসন লোড হচ্ছে...</div>;
+  if (!lesson) return <div className="p-8 text-center text-red-500">লেসন পাওয়া যায়নি!</div>;
+
+  const content = lesson.content;
+  const sections = content?.sections || [];
+
+  // Filter calculations
+  const counts = {
+    all: sections.length,
+    unread: sections.filter(s => (progressMap[s.id] || 'unread') === 'unread').length,
+    learning: sections.filter(s => progressMap[s.id] === 'learning').length,
+    known: sections.filter(s => progressMap[s.id] === 'known').length,
+  };
+
+  const filteredSections = sections.filter(s => {
+    if (activeFilter === 'all') return true;
+    const st = progressMap[s.id] || 'unread';
+    return st === activeFilter;
+  });
+
+  return (
+    <div className="min-h-screen pb-20 bg-gray-50">
+      {/* Sticky Navbar */}
+      <div className="bg-white shadow-sm sticky top-0 z-20 border-b border-gray-100">
+        <div className="max-w-5xl mx-auto px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Link className="font-semibold text-gray-500 hover:text-gray-800 transition-colors" to={`/course/${lesson.course_id}`}>&larr; ব্যাক</Link>
+            <h1 className="text-xl font-bold text-gray-800 line-clamp-1">{lesson.title}</h1>
+          </div>
+          
+          {/* Translation Toggle */}
+          {lesson.lesson_type === 'translation' && (
+            <label className="flex items-center cursor-pointer select-none">
+              <span className="mr-3 text-sm font-bold text-gray-700">Show Translation</span>
+              <div className="relative">
+                <input type="checkbox" className="sr-only" checked={showTranslation} onChange={() => setShowTranslation(!showTranslation)} />
+                <div className={`block w-12 h-7 rounded-full transition-colors ${showTranslation ? 'bg-blue-600' : 'bg-gray-300'}`}></div>
+                <div className={`dot absolute left-1 top-1 bg-white w-5 h-5 rounded-full transition-transform shadow-sm ${showTranslation ? 'transform translate-x-5' : ''}`}></div>
+              </div>
+            </label>
+          )}
+
+          {/* 4 In-Lesson Filter Tabs */}
+          {lesson.lesson_type === 'qa_sections' && sections.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-gray-100 p-1.5 rounded-2xl">
+              <button
+                onClick={() => setActiveFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  activeFilter === 'all' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                সব ({counts.all})
+              </button>
+              <button
+                onClick={() => setActiveFilter('unread')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  activeFilter === 'unread' ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                পড়া হয়নি ({counts.unread})
+              </button>
+              <button
+                onClick={() => setActiveFilter('learning')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  activeFilter === 'learning' ? 'bg-amber-500 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                শিখতেছি ({counts.learning})
+              </button>
+              <button
+                onClick={() => setActiveFilter('known')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  activeFilter === 'known' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                জানি ({counts.known})
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="max-w-4xl px-4 mx-auto space-y-8 mt-8">
+        
+        {/* 1. TRANSLATION LESSON */}
+        {lesson.lesson_type === 'translation' && content?.s ? (
+          content.s.map((sentence) => (
+            <div key={sentence.id} className="p-8 text-right bg-white border border-gray-100 rounded-2xl shadow-sm transition-shadow hover:shadow-md" dir="rtl">
+              <div className="mb-2 text-4xl leading-loose text-gray-900 font-bold flex flex-wrap justify-start gap-x-1.5 gap-y-4" dir="rtl" style={{ fontFamily: 'Amiri, serif' }}>
+                {sentence.w?.map((word) => (
+                  <WordPopup key={word.i} word={word}/>
+                ))}
+              </div>
+              {showTranslation && (
+                <div className="pt-6 mt-6 text-2xl font-medium text-left text-gray-700 border-t border-gray-100" dir="ltr">
+                  {sentence.bn}
+                </div>
+              )}
+            </div>
+          ))
+        ) : lesson.lesson_type === 'qa_sections' && sections.length > 0 ? (
+          
+          /* 2. FILTERED QA CARDS */
+          filteredSections.length === 0 ? (
+            <div className="p-12 text-center bg-white border border-gray-200 rounded-3xl text-gray-500 font-medium">
+              এই ক্যাটাগরিতে কোনো প্রশ্ন বা কার্ড নেই।
+            </div>
+          ) : (
+            filteredSections.map((sec, idx) => {
+              const status = progressMap[sec.id] || 'unread';
+              const isKnown = status === 'known';
+
+              return (
+                <div 
+                  key={sec.id} 
+                  className={`bg-white rounded-3xl shadow-sm border-2 transition-all duration-300 overflow-hidden ${isKnown ? 'border-emerald-300 shadow-emerald-50/50' : 'border-gray-200 hover:border-gray-300'}`}
+                >
+                  <div className="flex items-center justify-between px-6 py-4 bg-gray-50 border-b border-gray-100">
+                    <span className="text-xs font-bold tracking-wider text-gray-400 uppercase">
+                      প্রশ্ন {idx + 1}
+                    </span>
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${isKnown ? 'bg-emerald-100 text-emerald-800' : status === 'learning' ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-700'}`}>
+                      {isKnown ? '✓ জানা হয়েছে' : status === 'learning' ? '⏳ শিখতেছি' : 'পড়া হয়নি'}
+                    </span>
+                  </div>
+
+                  <div className="p-6 md:p-8 bg-gradient-to-br from-indigo-50/40 to-blue-50/20 border-b border-gray-100">
+                    {sec.ar_question && (
+                      <div className="text-2xl md:text-3xl font-bold text-gray-900 mb-4 text-right leading-relaxed" dir="rtl" style={{ fontFamily: 'Amiri, serif' }}>
+                        {sec.ar_question}
+                      </div>
+                    )}
+                    {sec.bn_question && (
+                      <div className="text-lg md:text-xl font-bold text-indigo-950 flex items-start gap-3">
+                        <span className="bg-indigo-600 text-white text-xs px-2.5 py-1 rounded-md uppercase tracking-wider shrink-0 mt-0.5">প্রশ্ন</span>
+                        <span>{sec.bn_question}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {sec.framework && (
+                    <div className="px-6 md:px-8 py-4 bg-amber-50/60 border-b border-amber-100/60 flex items-start gap-3">
+                      <span className="bg-amber-500 text-white text-xs px-2.5 py-1 rounded-md uppercase tracking-wider font-bold shrink-0 mt-0.5">ফ্রেমওয়ার্ক</span>
+                      <p className="text-amber-950 font-semibold text-sm md:text-base leading-relaxed">{sec.framework}</p>
+                    </div>
+                  )}
+
+                  <div className="p-6 md:p-8">
+                    <div className="text-gray-800 text-base md:text-lg leading-loose whitespace-pre-line space-y-4 font-normal">
+                      {sec.answer}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between px-6 md:px-8 py-4 bg-gray-50 border-t border-gray-100 gap-4">
+                    <span className="text-sm font-bold text-gray-500">আপনার অগ্রগতি:</span>
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => updateSectionStatus(sec.id, 'learning')}
+                        className={`px-5 py-2 rounded-xl text-sm font-bold border transition-all ${status === 'learning' ? 'bg-amber-400 border-amber-400 text-amber-950 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        শিখতেছি
+                      </button>
+                      <button 
+                        onClick={() => updateSectionStatus(sec.id, 'known')}
+                        className={`px-5 py-2 rounded-xl text-sm font-bold border transition-all ${isKnown ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        ✓ জানি
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )
+        ) : (
+          <div className="p-10 text-center bg-white border border-gray-100 rounded-lg shadow-sm text-gray-500">
+            এই লেসন টাইপটির ডিজাইন এখনো তৈরি করা হয়নি।
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
