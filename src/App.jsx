@@ -9,6 +9,7 @@ import UserDashboard from './pages/Dashboard/UserDashboard';
 import CourseOverview from './pages/Course/CourseOverview';
 import LessonViewer from './pages/Course/LessonViewer';
 import Flashcards from './pages/Dashboard/Flashcards';
+import AdminCourseBuilderV2 from './pages/Admin/AdminCourseBuilderV2';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -38,6 +39,7 @@ function App() {
           {/* Admin Routes */}
           <Route path="/admin" element={session ? <AdminDashboard /> : <Navigate to="/login" />} />
           <Route path="/admin/course/:courseId" element={session ? <AdminCurriculum /> : <Navigate to="/login" />} />
+          <Route path="/v2/admin" element={session ? <AdminCourseBuilderV2 /> : <Navigate to="/login" />} />
           
           {/* Student Routes */}
           <Route path="/" element={session ? <UserDashboard /> : <Navigate to="/login" />} />
