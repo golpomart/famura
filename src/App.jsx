@@ -10,6 +10,8 @@ import CourseOverview from './pages/Course/CourseOverview';
 import LessonViewer from './pages/Course/LessonViewer';
 import Flashcards from './pages/Dashboard/Flashcards';
 import AdminCourseBuilderV2 from './pages/Admin/AdminCourseBuilderV2';
+import LearnerCourseViewV2 from './pages/Course/LearnerCourseViewV2';
+import RevisionVaultV2 from './pages/Dashboard/RevisionVaultV2';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -40,6 +42,8 @@ function App() {
           <Route path="/admin" element={session ? <AdminDashboard /> : <Navigate to="/login" />} />
           <Route path="/admin/course/:courseId" element={session ? <AdminCurriculum /> : <Navigate to="/login" />} />
           <Route path="/v2/admin" element={session ? <AdminCourseBuilderV2 /> : <Navigate to="/login" />} />
+          <Route path="/v2/lessons" element={session ? <LearnerCourseViewV2 /> : <Navigate to="/login" />} />
+          <Route path="/v2/revision" element={session ? <RevisionVaultV2 /> : <Navigate to="/login" />} />
           
           {/* Student Routes */}
           <Route path="/" element={session ? <UserDashboard /> : <Navigate to="/login" />} />
