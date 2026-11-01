@@ -4,6 +4,12 @@ import { supabase } from '../../lib/supabase';
 
 const uid = () => Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
 
+// সব ধরনের রিমুভ করার ফাংশন
+function removeCitations(text) {
+  if (!text) return '';
+  return text.replace(/\[cite:\s*[^\]]+\]/gi, '');
+}
+
 // একক ব্লকের সাব-পার্সার
 function parseInnerBlocks(lines) {
   const blocks = [];
@@ -149,13 +155,15 @@ function parseInnerBlocks(lines) {
 
 // মাস্টার পার্সার: ITEM_START ও ITEM_END সাপোর্ট সহ
 function parseUnifiedSmartText(rawText, topVideoUrl = '') {
+  // প্রসেস করার আগেই সব cite রিমুভ করে ক্লিন টেক্সট তৈরি
+  const cleanedText = removeCitations(rawText);
   const finalBlocks = [];
 
   if (topVideoUrl && topVideoUrl.trim()) {
     finalBlocks.push({ id: uid(), type: 'video', url: topVideoUrl.trim() });
   }
 
-  const lines = (rawText || '').split('\n');
+  const lines = cleanedText.split('\n');
   let inTopic = false;
   let topicTitle = '';
   let topicLines = [];
@@ -310,11 +318,24 @@ export default function AdminCourseBuilderV2() {
   const handleSaveLesson = async () => {
     if (!lessonTitle.trim()) return alert('লেসনের শিরোনাম দিন!');
     setSaving(true);
-    const generatedBlocks = parseUnifiedSmartText(unifiedRawText, topVideoUrl);
+
+    // সেভ করার আগে টেক্সট থেকে cite ক্লিন করা
+    const cleanRawText = removeCitations(unifiedRawText);
+    setUnifiedRawText(cleanRawText); // ইনপুট বক্সেও ক্লিন টেক্সট আপডেট হবে
+
+    const generatedBlocks = parseUnifiedSmartText(cleanRawText, topVideoUrl);
     setPreviewBlocks(generatedBlocks);
+
     const payload = {
-      course_id: selectedCourse.id, module_id: activeModuleId, title: lessonTitle.trim(), lesson_type: 'unified',
-      lesson_data: { topVideoUrl: topVideoUrl.trim(), rawText: unifiedRawText, blocks: generatedBlocks },
+      course_id: selectedCourse.id,
+      module_id: activeModuleId,
+      title: lessonTitle.trim(),
+      lesson_type: 'unified',
+      lesson_data: {
+        topVideoUrl: topVideoUrl.trim(),
+        rawText: cleanRawText,
+        blocks: generatedBlocks,
+      },
       updated_at: new Date().toISOString(),
     };
     let error;

@@ -154,40 +154,56 @@ export default function LearnerCourseViewV2() {
         </div>
       )}
 
+      {/* Detailed QA Block (সরাসরি প্রশ্ন থেকে শুরু ও শুধু আইকন বাটন) */}
       {block.type === 'detailed_qa' && (
-        <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-emerald-200 mt-6 space-y-4">
-          <div className="border-b border-emerald-100 pb-3 mb-4">
-            <span className="px-2.5 py-1 text-[11px] font-bold uppercase bg-emerald-100 text-emerald-900 rounded-md">
-              📝 বিস্তারিত প্রশ্নোত্তর (Detailed Analysis)
-            </span>
-          </div>
-          <div className="space-y-3">
-            {block.items?.map((item) => {
-              const isOpen = Boolean(openDetailedCards[item.id]);
-              const isSaved = savedCardIds.has(String(item.id));
-              return (
-                <div key={item.id} className="border border-emerald-200 rounded-xl overflow-hidden bg-white transition shadow-sm">
-                  <div onClick={() => toggleDetailedCard(item.id)} className="p-4 bg-emerald-50/50 flex items-start justify-between gap-3 cursor-pointer select-none">
-                    <h4 className="text-base font-bold text-emerald-950 flex-1 leading-snug">
-                      <span className="text-emerald-700 mr-2">প্রশ্ন:</span>{item.question}
-                    </h4>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <button onClick={(e) => handleToggleSaveFlashcard(item, 'detailed_qa', null, e)} className={`px-2.5 py-1 rounded text-xs font-bold border ${isSaved ? 'bg-amber-400 border-amber-500 text-amber-900' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                        {isSaved ? '🔖 সেভড' : '🔖 সেভ'}
-                      </button>
-                      <span className="text-emerald-600 font-bold text-lg">{isOpen ? '▲' : '▼'}</span>
-                    </div>
+        <div className="space-y-3 mt-5">
+          {block.items?.map((item) => {
+            const isOpen = Boolean(openDetailedCards[item.id]);
+            const isSaved = savedCardIds.has(String(item.id));
+            return (
+              <div 
+                key={item.id} 
+                className="border border-emerald-200 rounded-xl overflow-hidden bg-white shadow-sm transition hover:border-emerald-300"
+              >
+                <div 
+                  onClick={() => toggleDetailedCard(item.id)} 
+                  className="p-4 bg-emerald-50/50 flex items-start justify-between gap-3 cursor-pointer select-none"
+                >
+                  <h4 className="text-base font-bold text-emerald-950 flex-1 leading-snug">
+                    <span className="text-emerald-700 mr-2">প্রশ্ন:</span>{item.question}
+                  </h4>
+                  
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    {/* শুধু 🔖 আইকন বাটন */}
+                    <button 
+                      type="button"
+                      onClick={(e) => handleToggleSaveFlashcard(item, 'detailed_qa', null, e)} 
+                      title={isSaved ? 'রিভিশন ভল্ট থেকে সরান' : 'রিভিশন ভল্টে সেভ করুন'}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm border transition ${
+                        isSaved 
+                          ? 'bg-amber-400 border-amber-500 text-amber-950 shadow-sm' 
+                          : 'bg-white text-gray-500 border-gray-200 hover:border-amber-400 hover:text-amber-600'
+                      }`}
+                    >
+                      🔖
+                    </button>
+                    
+                    {/* অ্যাকর্ডিয়ন অ্যারো */}
+                    <span className="text-emerald-600 font-bold text-base px-1">
+                      {isOpen ? '▲' : '▼'}
+                    </span>
                   </div>
-                  {isOpen && (
-                    <div 
-                      className="p-5 border-t border-emerald-100 text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap prose max-w-none"
-                      dangerouslySetInnerHTML={{ __html: item.answer }}
-                    />
-                  )}
                 </div>
-              );
-            })}
-          </div>
+
+                {isOpen && (
+                  <div 
+                    className="p-5 border-t border-emerald-100 text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap prose max-w-none bg-white"
+                    dangerouslySetInnerHTML={{ __html: item.answer }}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -259,16 +275,21 @@ export default function LearnerCourseViewV2() {
         </div>
 
         <div className="lg:col-span-9 space-y-6">
-          <div className="bg-white p-6 rounded-2xl border flex justify-between items-center">
-            <h2 className="text-2xl font-bold">{activeLesson?.title}</h2>
-          </div>
+          {/* যদি কোনো টপিক না থাকে (সাধারণ লেসন), শুধু তখনই এই বড় সাদা টাইটেল বক্স দেখাবে */}
+          {!hasTopics && (
+            <div className="bg-white p-6 rounded-2xl border flex justify-between items-center">
+              <h2 className="text-2xl font-bold">{activeLesson?.title}</h2>
+            </div>
+          )}
 
-          {/* ১. যদি লেসনে একাধিক ITEM_START থাকে এবং বর্তমানে কোনো নির্দিষ্ট আইটেম সিলেক্ট না থাকে -> তালিকা দেখাবে */}
+          {/* ১. লেসনে একাধিক ITEM_START থাকলে সূচিপত্র তালিকা */}
           {hasTopics && !activeTopicId && (
             <div className="space-y-4">
-              <div className="bg-purple-50 p-4 rounded-2xl border border-purple-200">
-                <h3 className="font-bold text-purple-900 text-base">📋 প্রশ্ন ও বিষয়ভিত্তিক সূচিপত্র ({topicBlocks.length} টি বিষয়)</h3>
-                <p className="text-xs text-purple-700 mt-0.5">পড়া শুরু করতে নিচের যেকোনো প্রশ্নে ক্লিক করুন</p>
+              {/* উপরের অতিরিক্ত বক্স বাদ দিয়ে সরাসরি এই একটি বক্সে লেসনের নাম ও মোট বিষয় সংখ্যা দেখাবে */}
+              <div className="bg-purple-50 px-5 py-4 rounded-2xl border border-purple-200">
+                <h3 className="font-bold text-purple-900 text-base md:text-lg">
+                  {activeLesson?.title} ({topicBlocks.length} টি বিষয়)
+                </h3>
               </div>
 
               <div className="grid grid-cols-1 gap-3">
@@ -286,9 +307,8 @@ export default function LearnerCourseViewV2() {
                         {t.title}
                       </h4>
                     </div>
-                    <div className="flex items-center gap-2 text-xs font-bold text-purple-600">
-                      <span>পড়ুন ও বিশ্লেষণ দেখুন</span>
-                      <span>→</span>
+                    <div className="text-gray-400 group-hover:text-purple-600 transition font-bold text-lg px-2">
+                      →
                     </div>
                   </div>
                 ))}
@@ -296,33 +316,102 @@ export default function LearnerCourseViewV2() {
             </div>
           )}
 
-          {/* ২. যদি কোনো নির্দিষ্ট টপিক ওপেন থাকে -> টপ বার ও ব্যাক বাটন */}
-          {hasTopics && activeTopicId && currentTopic && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between bg-purple-50 p-4 rounded-2xl border border-purple-200">
-                <button
-                  onClick={() => setActiveTopicId(null)}
-                  className="px-3.5 py-1.5 bg-white text-purple-900 border border-purple-300 rounded-xl text-xs font-bold hover:bg-purple-100 flex items-center gap-1.5"
-                >
-                  ← প্রশ্ন তালিকায় ফিরে যান
-                </button>
-                <h3 className="font-bold text-purple-950 text-sm truncate max-w-md">
-                  {currentTopic.title}
-                </h3>
-              </div>
+          {/* ২. যদি কোনো নির্দিষ্ট টপিক ওপেন থাকে -> টপ বার ও বটম বারে Prev / Next বাটন */}
+          {hasTopics && activeTopicId && currentTopic && (() => {
+            const currentIdx = topicBlocks.findIndex(t => t.id === activeTopicId);
+            const prevTopic = currentIdx > 0 ? topicBlocks[currentIdx - 1] : null;
+            const nextTopic = currentIdx < topicBlocks.length - 1 ? topicBlocks[currentIdx + 1] : null;
 
-              {displayBlocks.map((block, idx) => renderBlockItem(block, idx))}
+            const handleSwitchTopic = (targetTopic) => {
+              setActiveTopicId(targetTopic.id);
+              setOpenDetailedCards({});
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
 
-              <div className="pt-4 flex justify-between">
-                <button
-                  onClick={() => setActiveTopicId(null)}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold"
-                >
-                  ← সূচিপত্রে ফিরে যান
-                </button>
+            return (
+              <div className="space-y-4">
+                {/* টপ হেডার বার: ব্যাক বাটন, বর্তমান টাইটেল এবং Next / Prev কন্ট্রোল */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-purple-50 p-3.5 md:p-4 rounded-2xl border border-purple-200">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActiveTopicId(null)}
+                      className="px-3 py-1.5 bg-white text-purple-900 border border-purple-300 rounded-xl text-xs font-bold hover:bg-purple-100 shrink-0"
+                    >
+                      ← প্রশ্ন তালিকা
+                    </button>
+                    <span className="text-xs font-bold text-purple-700 bg-purple-200/60 px-2 py-1 rounded-lg">
+                      {currentIdx + 1} / {topicBlocks.length}
+                    </span>
+                  </div>
+
+                  <h3 className="font-bold text-purple-950 text-sm truncate max-w-xs md:max-w-md hidden sm:block">
+                    {currentTopic.title}
+                  </h3>
+
+                  {/* টপ Prev & Next বাটন */}
+                  <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+                    <button
+                      disabled={!prevTopic}
+                      onClick={() => prevTopic && handleSwitchTopic(prevTopic)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                        prevTopic
+                          ? 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100 cursor-pointer'
+                          : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      ← আগেরটি
+                    </button>
+                    <button
+                      disabled={!nextTopic}
+                      onClick={() => nextTopic && handleSwitchTopic(nextTopic)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                        nextTopic
+                          ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700 cursor-pointer shadow-sm'
+                          : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      পরেরটি →
+                    </button>
+                  </div>
+                </div>
+
+                {/* মূল কন্টেন্ট ও বিস্তারিত প্রশ্নোত্তর */}
+                {displayBlocks.map((block, idx) => renderBlockItem(block, idx))}
+
+                {/* বটম নেভিগেশন বার: তালিকা ব্যাক এবং আগের / পরের বাটন */}
+                <div className="pt-6 pb-2 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200">
+                  <button
+                    onClick={() => {
+                      setActiveTopicId(null);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold"
+                  >
+                    ← সূচিপত্রে ফিরে যান
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    {prevTopic && (
+                      <button
+                        onClick={() => handleSwitchTopic(prevTopic)}
+                        className="px-4 py-2 bg-white text-purple-900 border border-purple-300 hover:bg-purple-50 rounded-xl text-xs font-bold transition"
+                      >
+                        ← আগের প্রশ্ন
+                      </button>
+                    )}
+                    {nextTopic && (
+                      <button
+                        onClick={() => handleSwitchTopic(nextTopic)}
+                        className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                      >
+                        পরের প্রশ্ন →
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ৩. সাধারণ লেসন (যদি ITEM_START ছাড়া স্বাভাবিক লেসন হয়) */}
           {!hasTopics && displayBlocks.map((block, idx) => renderBlockItem(block, idx))}
